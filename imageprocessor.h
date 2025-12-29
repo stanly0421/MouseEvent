@@ -9,8 +9,10 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QStatusBar>
+#include <QInputDialog>
 #include "imagetransform.h"
 #include "mouseevent.h"
+#include "zoomwindow.h"
 
 class ImageProcessor : public QMainWindow
 {
@@ -30,6 +32,7 @@ private slots:
     void bigFile();
     void smallFile();
     void showGeometryTransform();
+    void setZoomFactor();
 
 private:
     ImageTransform *gWin;
@@ -46,14 +49,22 @@ private:
 
     QAction     *big;
     QAction     *small;
+    QAction     *zoomFactorAction;
 
     QLabel  *statusLabel;
     QLabel  *MousePosLabel;
+    
+    // For drag selection
+    bool isSelecting;
+    QPoint selectionStart;
+    QPoint selectionEnd;
+    double zoomFactor;
 
 protected:
     void mouseDoubleClickEvent(QMouseEvent *event);
     void mouseMoveEvent(QMouseEvent *event);
     void mousePressEvent(QMouseEvent *event);
     void mouseReleaseEvent(QMouseEvent *event);
+    void paintEvent(QPaintEvent *event);
 };
 #endif // IMAGEPROCESSOR_H

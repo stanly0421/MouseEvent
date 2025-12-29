@@ -1,12 +1,15 @@
 #include "imageprocessor.h"
 #include "imagetransform.h"
+#include "zoomwindow.h"
 #include <QHBoxLayout>
 #include <QMenuBar>
 #include <QFileDialog>
 #include <QDebug>
+#include <QPainter>
+#include <QInputDialog>
 
 ImageProcessor::ImageProcessor(QWidget *parent)
-    : QMainWindow(parent)
+    : QMainWindow(parent), isSelecting(false), zoomFactor(2.0)
 {
     setWindowTitle(tr("影像處理"));
     central = new QWidget();
@@ -65,6 +68,10 @@ void ImageProcessor::createActions()
     geometryAction->setStatusTip(tr("影像幾何轉換"));
     connect(geometryAction,SIGNAL(triggered(bool)),this,SLOT(showGeometryTransform()));
     connect(exitAction,SIGNAL(triggered(bool)),gWin,SLOT(close()));
+    
+    zoomFactorAction = new QAction(tr("設定放大倍率"),this);
+    zoomFactorAction->setStatusTip(tr("設定拖曳選取範圍的放大倍率"));
+    connect(zoomFactorAction,SIGNAL(triggered(bool)),this,SLOT(setZoomFactor()));
 }
 
 void ImageProcessor::createMenus()
@@ -78,6 +85,7 @@ void ImageProcessor::createMenus()
     fileMenu->addAction(small);
 
     fileMenu->addAction(geometryAction);
+    fileMenu->addAction(zoomFactorAction);
 }
 
 void ImageProcessor::createToolBars()
@@ -148,11 +156,24 @@ void ImageProcessor::mouseMoveEvent(QMouseEvent *event){
     QString str = "(" + QString::number(event->x()) +", " + QString::number(event->y()) + ")" + " = "+QString::number(gray);
 
     MousePosLabel->setText(str);
+    
+    // Update selection rectangle while dragging
+    if (isSelecting) {
+        selectionEnd = event->pos();
+        update(); // Trigger paintEvent to draw the selection rectangle
+    }
 }
 void ImageProcessor::mousePressEvent(QMouseEvent *event){
     QString str = "(" + QString::number(event->x()) +", " + QString::number(event->y()) + ")";
     if(event->button()==Qt::LeftButton){
         statusBar()->showMessage(tr("左鍵:")+str,1000);
+        
+        // Start drag selection if we have an image
+        if (!img.isNull()) {
+            isSelecting = true;
+            selectionStart = event->pos();
+            selectionEnd = event->pos();
+        }
     }
     else if(event->button()==Qt::RightButton){
         statusBar()->showMessage(tr("右鍵:")+str,1000);
@@ -164,4 +185,96 @@ void ImageProcessor::mousePressEvent(QMouseEvent *event){
 void ImageProcessor::mouseReleaseEvent(QMouseEvent *event){
     QString str = "(" + QString::number(event->x()) +", " + QString::number(event->y()) + ")";
     statusBar()->showMessage(tr("釋放:")+str,1000);
+    
+    if (event->button() == Qt::LeftButton && isSelecting) {
+        isSelecting = false;
+        
+        // Get the selection coordinates relative to the image label
+        QPoint labelStart = imgWin->mapFrom(this, selectionStart);
+        QPoint labelEnd = imgWin->mapFrom(this, event->pos());
+        
+        // Ensure the points are within the image label bounds
+        QRect labelRect = imgWin->rect();
+        labelStart.setX(qBound(0, labelStart.x(), labelRect.width() - 1));
+        labelStart.setY(qBound(0, labelStart.y(), labelRect.height() - 1));
+        labelEnd.setX(qBound(0, labelEnd.x(), labelRect.width() - 1));
+        labelEnd.setY(qBound(0, labelEnd.y(), labelRect.height() - 1));
+        
+        // Calculate the selection rectangle
+        int x = qMin(labelStart.x(), labelEnd.x());
+        int y = qMin(labelStart.y(), labelEnd.y());
+        int w = qAbs(labelEnd.x() - labelStart.x());
+        int h = qAbs(labelEnd.y() - labelStart.y());
+        
+        // Check if we have a valid selection
+        if (w > 5 && h > 5 && !img.isNull()) {
+            // Map the label coordinates to the actual image coordinates
+            double scaleX = (double)img.width() / (double)labelRect.width();
+            double scaleY = (double)img.height() / (double)labelRect.height();
+            
+            int imgX = (int)(x * scaleX);
+            int imgY = (int)(y * scaleY);
+            int imgW = (int)(w * scaleX);
+            int imgH = (int)(h * scaleY);
+            
+            // Ensure we don't go out of bounds
+            imgX = qBound(0, imgX, img.width() - 1);
+            imgY = qBound(0, imgY, img.height() - 1);
+            imgW = qMin(imgW, img.width() - imgX);
+            imgH = qMin(imgH, img.height() - imgY);
+            
+            if (imgW > 0 && imgH > 0) {
+                // Extract the selected region
+                QImage selectedRegion = img.copy(imgX, imgY, imgW, imgH);
+                
+                // Apply zoom factor
+                int zoomedWidth = (int)(imgW * zoomFactor);
+                int zoomedHeight = (int)(imgH * zoomFactor);
+                QImage zoomedImage = selectedRegion.scaled(zoomedWidth, zoomedHeight, 
+                                                           Qt::KeepAspectRatio, 
+                                                           Qt::SmoothTransformation);
+                
+                // Create and show the zoom window
+                ZoomWindow *zoomWin = new ZoomWindow(zoomedImage);
+                zoomWin->show();
+            }
+        }
+        
+        update(); // Clear the selection rectangle
+    }
 }
+
+void ImageProcessor::paintEvent(QPaintEvent *event)
+{
+    QMainWindow::paintEvent(event);
+    
+    if (isSelecting) {
+        QPainter painter(this);
+        painter.setPen(QPen(Qt::red, 2, Qt::DashLine));
+        
+        int x = qMin(selectionStart.x(), selectionEnd.x());
+        int y = qMin(selectionStart.y(), selectionEnd.y());
+        int w = qAbs(selectionEnd.x() - selectionStart.x());
+        int h = qAbs(selectionEnd.y() - selectionStart.y());
+        
+        painter.drawRect(x, y, w, h);
+    }
+}
+
+void ImageProcessor::setZoomFactor()
+{
+    bool ok;
+    double newZoom = QInputDialog::getDouble(this, 
+                                             tr("設定放大倍率"),
+                                             tr("請輸入放大倍率 (1.0 - 10.0):"),
+                                             zoomFactor,
+                                             1.0,
+                                             10.0,
+                                             1,
+                                             &ok);
+    if (ok) {
+        zoomFactor = newZoom;
+        statusBar()->showMessage(tr("放大倍率已設定為: ") + QString::number(zoomFactor), 2000);
+    }
+}
+
