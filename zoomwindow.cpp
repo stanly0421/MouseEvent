@@ -11,6 +11,7 @@ ZoomWindow::ZoomWindow(const QImage &image, QWidget *parent)
     : QMainWindow(parent), currentColor(Qt::red), brushSize(3), isDrawing(false)
 {
     setWindowTitle(tr("放大視窗 - 可編輯"));
+    setAttribute(Qt::WA_DeleteOnClose); // Auto-delete when window is closed
     
     // Create central widget with scroll area
     QWidget *centralWidget = new QWidget(this);
@@ -88,8 +89,8 @@ void ZoomWindow::updateImageLabel()
 void ZoomWindow::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton) {
-        // Convert window coordinates to label coordinates
-        QPoint labelPos = imageLabel->mapFrom(this, event->pos());
+        // Convert event position to label coordinates
+        QPoint labelPos = imageLabel->mapFromGlobal(event->globalPos());
         
         // Check if the click is within the image bounds
         if (imageLabel->rect().contains(labelPos)) {
@@ -102,7 +103,7 @@ void ZoomWindow::mousePressEvent(QMouseEvent *event)
 void ZoomWindow::mouseMoveEvent(QMouseEvent *event)
 {
     if (isDrawing && (event->buttons() & Qt::LeftButton)) {
-        QPoint labelPos = imageLabel->mapFrom(this, event->pos());
+        QPoint labelPos = imageLabel->mapFromGlobal(event->globalPos());
         
         // Check if the position is within the image bounds
         if (imageLabel->rect().contains(labelPos)) {

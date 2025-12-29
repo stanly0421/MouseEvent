@@ -189,6 +189,12 @@ void ImageProcessor::mouseReleaseEvent(QMouseEvent *event){
     if (event->button() == Qt::LeftButton && isSelecting) {
         isSelecting = false;
         
+        // Check if imgWin is valid
+        if (!imgWin) {
+            update();
+            return;
+        }
+        
         // Get the selection coordinates relative to the image label
         QPoint labelStart = imgWin->mapFrom(this, selectionStart);
         QPoint labelEnd = imgWin->mapFrom(this, event->pos());
@@ -235,7 +241,7 @@ void ImageProcessor::mouseReleaseEvent(QMouseEvent *event){
                                                            Qt::SmoothTransformation);
                 
                 // Create and show the zoom window
-                ZoomWindow *zoomWin = new ZoomWindow(zoomedImage);
+                ZoomWindow *zoomWin = new ZoomWindow(zoomedImage, this);
                 zoomWin->show();
             }
         }
